@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>V28.1 Bot</title>
+<style>
+body{background:#0a0e1a;color:#fff;font-family:sans-serif;padding:12px}
+.card{background:#151a2e;border:1px solid #2a3250;border-radius:12px;padding:12px;margin-bottom:10px}
+input,select,button{width:100%;padding:12px;border-radius:8px;background:#0f1426;color:#fff;border:1px solid #2a3250;margin-top:6px}
+button{background:#00d395;color:#000;font-weight:900;font-size:16px}
+button.stop{background:#ff3b5c;color:#fff}
+.log{height:250px;overflow:auto;background:#000;border:1px solid #333;padding:8px;font-size:11px;font-family:monospace;white-space:pre-wrap}
+.stat{font-size:22px;font-weight:900}
+</style>
+</head>
+<body>
+<h3>🚀 V28.1 ALL Vol - 0=Even FIXED</h3>
+<div class="card">
+<input id="appId" value="1089">
+<input id="pat" placeholder="pat_...">
+<select id="mode"><option value="ALL">ANALYZE ALL</option><option>R_10</option><option>R_25</option><option>R_50</option><option>R_75</option><option>R_100</option><option>1HZ15V</option><option>1HZ30V</option><option>1HZ90V</option></select>
+</div>
+<div class="card">
+<input id="stake" type="number" value="0.35">
+<input id="streak" type="number" value="5">
+<input id="mart" type="number" value="2.1">
+<input id="tp" type="number" value="10">
+<input id="sl" type="number" value="10">
+<select id="ct"><option value="DIGITEVEN">Even - 0=Even FIXED</option><option value="DIGITODD">Odd</option></select>
+</div>
+<div class="card">
+Balance: <b id="bal">--</b> | Profit: <b id="prof">0.00</b><br>
+<span id="info">-</span><br><br>
+<button id="startBtn">START BOT</button>
+<button id="stopBtn" class="stop">STOP</button>
+<div id="ticks" style="font-size:10px;margin-top:8px"></div>
+<div class="log" id="log"></div>
+</div>
+<script>
+let ws,running=false,profit=0,martStep=0,curStake=0,h={},syms=["R_10","R_25","R_50","R_75","R_100","1HZ15V","1HZ30V","1HZ90V"];
+const $=i=>document.getElementById(i);
+const log=m=>{$("log").textContent=new Date().toLocaleTimeString()+"|"+m+"\n"+$("log").textContent}
+const gs=()=>({appId:$("appId").value,pat:$("pat").value,mode:$("mode").value,stake:+$("stake").value,streak:+$("streak").value,mart:+$("mart").value,tp:+$("tp").value,sl:+$("sl").value,ct:$("ct").value});
+function conn(){let s=gs();if(ws)ws.close();ws=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id="+s.appId);ws.onopen=()=>ws.send(JSON.stringify({authorize:s.pat}));ws.onmessage=e=>{let d=JSON.parse(e.data);if(d.error){log(d.error.message);return}if(d.msg_type==="authorize"){$("bal").textContent=d.authorize.balance;log("Auth OK Bal "+d.authorize.balance);sub()}if(d.msg_type==="tick")onTick(d.tick);if(d.msg_type==="buy")log("BUY $"+d.buy.buy_price);if(d.msg_type==="proposal_open_contract"&&d.proposal_open_contract.is_sold){let p=+d.proposal_open_contract.profit;profit+=p;$("prof").textContent=profit.toFixed(2);log((p>=0?"WIN ":"LOSS ")+p.toFixed(2)+" TOT "+profit.toFixed(2));if(p<0){martStep++;curStake*=(gs().mart)}else{martStep=0;curStake=gs().stake}if(profit>=gs().tp||profit<=-Math.abs(gs().sl)){log("TP/SL HIT STOP");running=false;try{ws.close()}catch{}}}};ws.onclose=()=>{if(running)setTimeout(conn,2000)}}
+function sub(){let s=gs();h={};(s.mode==="ALL"?syms:[s.mode]).forEach(x=>{h[x]=[];ws.send(JSON.stringify({ticks:x,subscribe:1}))});log("Subscribed "+(s.mode==="ALL"?syms.join(","):s.mode))}
+function streak(a){if(a.length<2)return{count:0};let c=1,le=a[a.length-1]%2===0;for(let i=a.length-2;i>=0;i--){if((a[i]%2===0)===le)c++;else break}return{count:c,isEven:le}}
+function onTick(t){let pr=t.quote,d=parseInt(pr.toString().slice(-1));if(isNaN(d))d=Math.abs(Math.floor(pr*100)%10);if(!h[t.symbol])h[t.symbol]=[];h[t.symbol].push(d);if(h[t.symbol].length>100)h[t.symbol].shift();$("info").textContent=t.symbol+" $"+pr+" d"+d;$("ticks").textContent=Object.keys(h).map(k=>k+":"+h[k].slice(-5)).join(" ");let s=gs();if(!running||h[t.symbol].length<s.streak)return;let st=streak(h[t.symbol]);if(st.count>=s.streak){if(window["lt"+t.symbol]&&Date.now()-window["lt"+t.symbol]<1500)return;window["lt"+t.symbol]=Date.now();log("STREAK "+t.symbol+" "+(st.isEven?"E":"O")+" x"+st.count);if(martStep===0)curStake=s.stake;ws.send(JSON.stringify({buy:1,price:curStake,parameters:{amount:curStake,basis:"stake",contract_type:s.ct,currency:"USD",duration:1,duration_unit:"t",symbol:t.symbol}}));ws.send(JSON.stringify({proposal_open_contract:1,subscribe:1}))}}
+$("startBtn").onclick=()=>{if(!$("pat").value.startsWith("pat_")){log("PAT lazima ianze pat_");return}running=true;profit=0;martStep=0;curStake=gs().stake;$("prof").textContent="0.00";log("START "+gs().mode+" stake "+curStake);conn()};
+$("stopBtn").onclick=()=>{running=false;log("STOPPED");try{ws.close()}catch{}};
+</script>
+</body>
+</html>
